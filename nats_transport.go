@@ -195,6 +195,12 @@ func newNATSStreamLayer(id string, conn *nats.Conn, logger *log.Logger) (*natsSt
 }
 
 func (n *natsStreamLayer) Dial(address string, timeout time.Duration) (net.Conn, error) {
+	// QUESTION: The Raft NetTransport does connection pooling, which is useful
+	// for TCP sockets. The NATS transport simulates a socket using a
+	// subscription at each endpoint, but everything goes over the same NATS
+	// socket. This means there is little advantage to pooling here currently.
+	// Should we actually Dial a new NATS connection here and rely on pooling?
+
 	connect := &connectRequestProto{
 		ID:    n.localAddr.String(),
 		Inbox: fmt.Sprintf(natsRequestInbox, n.localAddr.String(), nats.NewInbox()),
