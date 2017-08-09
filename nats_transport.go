@@ -16,8 +16,6 @@ import (
 	"github.com/nats-io/go-nats"
 )
 
-var requestProtoPool = sync.Pool{New: func() interface{} { return &requestProto{} }}
-
 const (
 	natsConnectInbox = "raft.%s.accept"
 	natsRequestInbox = "raft.%s.request.%s"
@@ -44,13 +42,8 @@ type connectResponseProto struct {
 	Inbox string `json:"inbox"`
 }
 
-type requestProto struct {
-	Disconnect bool   `json:"disconnect"`
-	Data       []byte `json:"data"`
-}
-
 type natsConn struct {
-	parent     *natsStreamLayer
+	conn       *nats.Conn
 	localAddr  natsAddr
 	remoteAddr natsAddr
 	sub        *nats.Subscription
@@ -65,7 +58,7 @@ func newNATSConn(n *natsStreamLayer, address string) *natsConn {
 	// TODO: probably want a buffered pipe.
 	reader, writer := io.Pipe()
 	return &natsConn{
-		parent:     n,
+		conn:       n.conn,
 		localAddr:  n.localAddr,
 		remoteAddr: natsAddr(address),
 		reader:     newTimeoutReader(reader),
@@ -91,22 +84,19 @@ func (n *natsConn) Write(b []byte) (int, error) {
 		return 0, errors.New("write to closed conn")
 	}
 
-	// TODO: handle MAX_PAYLOAD_SIZE limit here.
-	requestProto := requestProtoPool.Get().(*requestProto)
-	requestProto.Disconnect = false
-	requestProto.Data = b
-
-	// TODO: JSON is inefficient.
-	data, err := json.Marshal(requestProto)
-	if err != nil {
-		panic(err)
-	}
-	if err := n.parent.conn.Publish(n.outbox, data); err != nil {
-		requestProtoPool.Put(requestProto)
-		return 0, err
+	if len(b) == 0 {
+		return 0, nil
 	}
 
-	requestProtoPool.Put(requestProto)
+	// Send data in chunks to avoid hitting max payload.
+	for i := 0; i < len(b); {
+		chunkSize := min(int64(len(b[i:])), n.conn.MaxPayload())
+		if err := n.conn.Publish(n.outbox, b[i:int64(i)+chunkSize]); err != nil {
+			return i, err
+		}
+		i += int(chunkSize)
+	}
+
 	return len(b), nil
 }
 
@@ -127,18 +117,10 @@ func (n *natsConn) close(signalRemote bool) error {
 	}
 
 	if signalRemote {
-		// Send disconnect proto to peer for graceful disconnect.
-		proto := requestProtoPool.Get().(*requestProto)
-		proto.Disconnect = true
-		proto.Data = nil
-		data, err := json.Marshal(proto)
-		if err != nil {
-			panic(err)
-		}
-		// Not concerned with errors here as this is best effort.
-		n.parent.conn.Publish(n.outbox, data)
-		n.parent.conn.Flush()
-		requestProtoPool.Put(proto)
+		// Send empty message to signal EOF for a graceful disconnect. Not
+		// concerned with errors here as this is best effort.
+		n.conn.Publish(n.outbox, nil)
+		n.conn.Flush()
 	}
 
 	n.closed = true
@@ -173,18 +155,13 @@ func (n *natsConn) SetWriteDeadline(t time.Time) error {
 }
 
 func (n *natsConn) msgHandler(msg *nats.Msg) {
-	var proto requestProto
-	if err := json.Unmarshal(msg.Data, &proto); err != nil {
-		n.parent.logger.Println("[ERR] raft-nats: Invalid request message (invalid data)")
+	// Check if remote peer disconnected.
+	if len(msg.Data) == 0 {
+		n.close(false)
 		return
 	}
 
-	// Check if remote peer disconnected.
-	if proto.Disconnect {
-		n.close(false)
-	}
-
-	n.writer.Write(proto.Data)
+	n.writer.Write(msg.Data)
 }
 
 type natsStreamLayer struct {
@@ -323,4 +300,11 @@ func newNATSTransport(id string, conn *nats.Conn, timeout time.Duration, logger 
 	}
 
 	return transportCreator(stream), nil
+}
+
+func min(x, y int64) int64 {
+	if x < y {
+		return x
+	}
+	return y
 }
