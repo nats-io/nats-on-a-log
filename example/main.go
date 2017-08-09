@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +19,7 @@ import (
 
 func main() {
 	var (
+		port         = flag.String("port", "8080", "http port")
 		id           = flag.String("id", "", "node id")
 		kvPath       = flag.String("kv-path", "", "KV store path")
 		logPath      = flag.String("log-path", "", "Raft log path")
@@ -73,19 +78,19 @@ func main() {
 		panic(err)
 	}
 
-	r, err := raft.NewRaft(config, fsm, cacheStore, store, snapshots, peersStore, trans)
+	node, err := raft.NewRaft(config, fsm, cacheStore, store, snapshots, peersStore, trans)
 	if err != nil {
 		panic(err)
 	}
 
 	go func() {
-		leaderCh := r.LeaderCh()
+		leaderCh := node.LeaderCh()
 		for {
 			select {
 			case isLeader := <-leaderCh:
 				if isLeader {
 					fmt.Println("*** LEADERSHIP ACQUIRED ***")
-					bar := r.Barrier(0)
+					bar := node.Barrier(0)
 					if err := bar.Error(); err != nil {
 						fmt.Printf("Failed applying barrier when becoming leader: %s\n", err)
 					}
@@ -96,5 +101,50 @@ func main() {
 		}
 	}()
 
-	select {}
+	http.HandleFunc("/set", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Must use POST request", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+		var buf bytes.Buffer
+		_, err := buf.ReadFrom(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var op operation
+		if err := json.Unmarshal(buf.Bytes(), &op); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if string(op.Key) == "" {
+			http.Error(w, "Key not set", http.StatusBadRequest)
+			return
+		}
+		future := node.Apply(buf.Bytes(), 5*time.Second)
+		if err := future.Error(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Write([]byte(strconv.FormatInt(int64(future.Index()), 10)))
+	})
+
+	http.HandleFunc("/get/", func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimPrefix(r.URL.Path, "/get/")
+		val, err := fsm.Get([]byte(key))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if val == nil {
+			http.Error(w, "", http.StatusNotFound)
+			return
+		}
+		w.Write(val)
+	})
+
+	if err := http.ListenAndServe(":"+*port, nil); err != nil {
+		panic(err)
+	}
 }

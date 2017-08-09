@@ -12,8 +12,8 @@ import (
 const keysBucket = "keys"
 
 type operation struct {
-	Key   []byte `json:"key"`
-	Value []byte `json:"value"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 // FSM represents the state machine logic exposed to the raft module.
@@ -22,7 +22,7 @@ type FSM struct {
 	db   *bolt.DB
 }
 
-func NewFSM(path string) (raft.FSM, error) {
+func NewFSM(path string) (*FSM, error) {
 	fsm := &FSM{path: path}
 	err := fsm.init()
 	return fsm, err
@@ -56,7 +56,7 @@ func (f *FSM) Apply(l *raft.Log) interface{} {
 	}
 
 	if err := f.db.Update(func(tx *bolt.Tx) error {
-		return tx.Bucket([]byte(keysBucket)).Put(op.Key, op.Value)
+		return tx.Bucket([]byte(keysBucket)).Put([]byte(op.Key), []byte(op.Value))
 	}); err != nil {
 		panic(err)
 	}
@@ -78,7 +78,7 @@ func (f *FSM) Restore(old io.ReadCloser) error {
 		}
 
 		if err := f.db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket([]byte(keysBucket)).Put(op.Key, op.Value)
+			return tx.Bucket([]byte(keysBucket)).Put([]byte(op.Key), []byte(op.Value))
 		}); err != nil {
 			fmt.Printf("Error during Restore: %s\n", err)
 			return err
@@ -104,7 +104,7 @@ func (s *snapshot) Persist(sink raft.SnapshotSink) error {
 		s.db.View(func(tx *bolt.Tx) error {
 			b := tx.Bucket([]byte(keysBucket))
 			return b.ForEach(func(k, v []byte) error {
-				op := &operation{Key: k, Value: v}
+				op := &operation{Key: string(k), Value: string(v)}
 				data, err := json.Marshal(op)
 				if err != nil {
 					errorCh <- err
