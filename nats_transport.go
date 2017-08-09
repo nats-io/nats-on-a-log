@@ -23,6 +23,8 @@ const (
 	defaultBufferSize = 32 * 1024
 )
 
+// natsAddr implements the net.Addr interface. An address for the NATS
+// transport is simply a node id, which is then used to construct an inbox.
 type natsAddr string
 
 func (n natsAddr) Network() string {
@@ -42,6 +44,9 @@ type connectResponseProto struct {
 	Inbox string `json:"inbox"`
 }
 
+// natsConn implements the net.Conn interface by simulating a stream-oriented
+// connection between two peers. It does this by establishing a unique inbox at
+// each endpoint which the peers use to stream data to each other.
 type natsConn struct {
 	conn       *nats.Conn
 	localAddr  natsAddr
@@ -164,6 +169,7 @@ func (n *natsConn) msgHandler(msg *nats.Msg) {
 	n.writer.Write(msg.Data)
 }
 
+// natsStreamLayer implements the raft.StreamLayer interface.
 type natsStreamLayer struct {
 	conn      *nats.Conn
 	localAddr natsAddr
@@ -181,6 +187,9 @@ func newNATSStreamLayer(id string, conn *nats.Conn, logger *log.Logger) (*natsSt
 	return n, err
 }
 
+// Dial creates a new net.Conn with the remote address. This is implemented by
+// performing a handshake over NATS which establishes unique inboxes at each
+// endpoint for streaming data.
 func (n *natsStreamLayer) Dial(address string, timeout time.Duration) (net.Conn, error) {
 	// QUESTION: The Raft NetTransport does connection pooling, which is useful
 	// for TCP sockets. The NATS transport simulates a socket using a
@@ -223,6 +232,7 @@ func (n *natsStreamLayer) Dial(address string, timeout time.Duration) (net.Conn,
 	return peerConn, nil
 }
 
+// Accept waits for and returns the next connection to the listener.
 func (n *natsStreamLayer) Accept() (net.Conn, error) {
 	for {
 		msg, err := n.sub.NextMsgWithContext(context.TODO())
@@ -277,6 +287,8 @@ func (n *natsStreamLayer) Addr() net.Addr {
 	return n.localAddr
 }
 
+// NewNATSTransport creates a new raft.NetworkTransport implemented with NATS
+// as the transport layer.
 func NewNATSTransport(id string, conn *nats.Conn, timeout time.Duration, logOutput io.Writer) (*raft.NetworkTransport, error) {
 	if logOutput == nil {
 		logOutput = os.Stderr
@@ -284,8 +296,9 @@ func NewNATSTransport(id string, conn *nats.Conn, timeout time.Duration, logOutp
 	return NewNATSTransportWithLogger(id, conn, timeout, log.New(logOutput, "", log.LstdFlags))
 }
 
+// NewNATSTransportWithLogger creates a new raft.NetworkTransport implemented
+// with NATS as the transport layer using the provided Logger.
 func NewNATSTransportWithLogger(id string, conn *nats.Conn, timeout time.Duration, logger *log.Logger) (*raft.NetworkTransport, error) {
-
 	return newNATSTransport(id, conn, timeout, logger, func(stream raft.StreamLayer) *raft.NetworkTransport {
 		return raft.NewNetworkTransportWithLogger(stream, 3, timeout, logger)
 	})
