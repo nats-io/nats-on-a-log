@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
 	"github.com/nats-io/go-nats"
+	"github.com/tylertreat/nats-on-a-log"
 )
 
 func main() {
@@ -62,7 +63,7 @@ func main() {
 		panic(err)
 	}
 
-	trans, err := raft.NewNATSTransport(*id, conn, 2*time.Second, os.Stdout)
+	trans, err := natslog.NewNATSTransport(*id, conn, 2*time.Second, os.Stdout)
 	if err != nil {
 		panic(err)
 	}
