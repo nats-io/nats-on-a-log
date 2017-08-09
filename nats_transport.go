@@ -16,6 +16,8 @@ import (
 	"github.com/nats-io/go-nats"
 )
 
+var requestProtoPool = sync.Pool{New: func() interface{} { return &requestProto{} }}
+
 const (
 	natsConnectInbox = "raft.%s.accept"
 	natsRequestInbox = "raft.%s.request.%s"
@@ -90,16 +92,21 @@ func (n *natsConn) Write(b []byte) (int, error) {
 	}
 
 	// TODO: handle MAX_PAYLOAD_SIZE limit here.
-	// TODO: also JSON is inefficient and need to pool proto structs.
-	requestProto := &requestProto{Data: b}
+	requestProto := requestProtoPool.Get().(*requestProto)
+	requestProto.Disconnect = false
+	requestProto.Data = b
+
+	// TODO: JSON is inefficient.
 	data, err := json.Marshal(requestProto)
 	if err != nil {
 		panic(err)
 	}
 	if err := n.parent.conn.Publish(n.outbox, data); err != nil {
+		requestProtoPool.Put(requestProto)
 		return 0, err
 	}
 
+	requestProtoPool.Put(requestProto)
 	return len(b), nil
 }
 
@@ -121,7 +128,9 @@ func (n *natsConn) close(signalRemote bool) error {
 
 	if signalRemote {
 		// Send disconnect proto to peer for graceful disconnect.
-		proto := &requestProto{Disconnect: true}
+		proto := requestProtoPool.Get().(*requestProto)
+		proto.Disconnect = true
+		proto.Data = nil
 		data, err := json.Marshal(proto)
 		if err != nil {
 			panic(err)
@@ -129,6 +138,7 @@ func (n *natsConn) close(signalRemote bool) error {
 		// Not concerned with errors here as this is best effort.
 		n.parent.conn.Publish(n.outbox, data)
 		n.parent.conn.Flush()
+		requestProtoPool.Put(proto)
 	}
 
 	n.closed = true
