@@ -1,3 +1,7 @@
+// Copyright 2017 Apcera Inc. All rights reserved.
+
+// Package natslog provides an implementation of the Transport interface for
+// the HashiCorp Raft library using NATS.
 package natslog
 
 import (
