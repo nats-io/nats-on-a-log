@@ -132,7 +132,6 @@ func (n *natsConn) close(signalRemote bool) error {
 
 	n.closed = true
 	n.writer.Close()
-	n.reader.Close()
 
 	return nil
 }
