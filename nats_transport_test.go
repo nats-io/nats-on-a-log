@@ -4,6 +4,7 @@ package natslog
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -189,6 +190,8 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 		Success: true,
 	}
 
+	ch := make(chan error, 1)
+
 	// Listen for a request
 	go func() {
 		select {
@@ -196,14 +199,17 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 			// Verify the command
 			req := rpc.Command.(*raft.AppendEntriesRequest)
 			if !reflect.DeepEqual(req, &args) {
-				t.Fatalf("command mismatch: %#v %#v", *req, args)
+				ch <- fmt.Errorf("command mismatch: %#v %#v", *req, args)
+				return
 			}
 
 			rpc.Respond(&resp, nil)
 
 		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("timeout")
+			ch <- errors.New("timeout")
+			return
 		}
+		close(ch)
 	}()
 
 	// Transport 2 makes outbound request
@@ -216,6 +222,11 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 	var out raft.AppendEntriesResponse
 	if err := trans2.AppendEntries(trans1.LocalAddr(), &args, &out); err != nil {
 		t.Fatalf("err: %v", err)
+	}
+
+	err = <-ch
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Verify the response
@@ -259,6 +270,8 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 		Success: true,
 	}
 
+	ch := make(chan error, 1)
+
 	// Listen for a request
 	go func() {
 		for i := 0; i < 10; i++ {
@@ -267,14 +280,17 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 				// Verify the command
 				req := rpc.Command.(*raft.AppendEntriesRequest)
 				if !reflect.DeepEqual(req, &args) {
-					t.Fatalf("command mismatch: %#v %#v", *req, args)
+					ch <- fmt.Errorf("command mismatch: %#v %#v", *req, args)
+					return
 				}
 				rpc.Respond(&resp, nil)
 
 			case <-time.After(200 * time.Millisecond):
-				t.Fatalf("timeout")
+				ch <- errors.New("timeout")
+				return
 			}
 		}
+		close(ch)
 	}()
 
 	// Transport 2 makes outbound request
@@ -294,6 +310,11 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 		if _, err := pipeline.AppendEntries(&args, out); err != nil {
 			t.Fatalf("err: %v", err)
 		}
+	}
+
+	err = <-ch
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	respCh := pipeline.Consumer()
@@ -337,6 +358,8 @@ func TestNATSTransportRequestVote(t *testing.T) {
 		Granted: false,
 	}
 
+	ch := make(chan error, 1)
+
 	// Listen for a request
 	go func() {
 		select {
@@ -344,14 +367,17 @@ func TestNATSTransportRequestVote(t *testing.T) {
 			// Verify the command
 			req := rpc.Command.(*raft.RequestVoteRequest)
 			if !reflect.DeepEqual(req, &args) {
-				t.Fatalf("command mismatch: %#v %#v", *req, args)
+				ch <- fmt.Errorf("command mismatch: %#v %#v", *req, args)
+				return
 			}
 
 			rpc.Respond(&resp, nil)
 
 		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("timeout")
+			ch <- errors.New("timeout")
+			return
 		}
+		close(ch)
 	}()
 
 	// Transport 2 makes outbound request
@@ -364,6 +390,11 @@ func TestNATSTransportRequestVote(t *testing.T) {
 	var out raft.RequestVoteResponse
 	if err := trans2.RequestVote(trans1.LocalAddr(), &args, &out); err != nil {
 		t.Fatalf("err: %v", err)
+	}
+
+	err = <-ch
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Verify the response
@@ -400,6 +431,8 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 		Success: true,
 	}
 
+	ch := make(chan error, 1)
+
 	// Listen for a request
 	go func() {
 		select {
@@ -407,7 +440,8 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 			// Verify the command
 			req := rpc.Command.(*raft.InstallSnapshotRequest)
 			if !reflect.DeepEqual(req, &args) {
-				t.Fatalf("command mismatch: %#v %#v", *req, args)
+				ch <- fmt.Errorf("command mismatch: %#v %#v", *req, args)
+				return
 			}
 
 			// Try to read the bytes
@@ -415,15 +449,18 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 			rpc.Reader.Read(buf)
 
 			// Compare
-			if bytes.Compare(buf, []byte("0123456789")) != 0 {
-				t.Fatalf("bad buf %v", buf)
+			if !bytes.Equal(buf, []byte("0123456789")) {
+				ch <- fmt.Errorf("bad buf %v", buf)
+				return
 			}
 
 			rpc.Respond(&resp, nil)
 
 		case <-time.After(200 * time.Millisecond):
-			t.Fatalf("timeout")
+			ch <- errors.New("timeout")
+			return
 		}
+		close(ch)
 	}()
 
 	// Transport 2 makes outbound request
@@ -439,6 +476,11 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 	var out raft.InstallSnapshotResponse
 	if err := trans2.InstallSnapshot(trans1.LocalAddr(), &args, &out, buf); err != nil {
 		t.Fatalf("err: %v", err)
+	}
+
+	err = <-ch
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Verify the response
@@ -504,6 +546,8 @@ func TestNATSTransportPooledConn(t *testing.T) {
 		Success: true,
 	}
 
+	ch1 := make(chan error, 1)
+
 	// Listen for a request
 	go func() {
 		for {
@@ -512,11 +556,13 @@ func TestNATSTransportPooledConn(t *testing.T) {
 				// Verify the command
 				req := rpc.Command.(*raft.AppendEntriesRequest)
 				if !reflect.DeepEqual(req, &args) {
-					t.Fatalf("command mismatch: %#v %#v", *req, args)
+					ch1 <- fmt.Errorf("command mismatch: %#v %#v", *req, args)
+					return
 				}
 				rpc.Respond(&resp, nil)
 
 			case <-time.After(200 * time.Millisecond):
+				close(ch1)
 				return
 			}
 		}
@@ -533,16 +579,20 @@ func TestNATSTransportPooledConn(t *testing.T) {
 	wg := &sync.WaitGroup{}
 	wg.Add(5)
 
+	ch2 := make(chan error, 1)
+
 	appendFunc := func() {
 		defer wg.Done()
 		var out raft.AppendEntriesResponse
 		if err := trans2.AppendEntries(trans1.LocalAddr(), &args, &out); err != nil {
-			t.Fatalf("err: %v", err)
+			ch2 <- fmt.Errorf("err: %v", err)
+			return
 		}
 
 		// Verify the response
 		if !reflect.DeepEqual(resp, out) {
-			t.Fatalf("command mismatch: %#v %#v", resp, out)
+			ch2 <- fmt.Errorf("command mismatch: %#v %#v", resp, out)
+			return
 		}
 	}
 
@@ -553,4 +603,15 @@ func TestNATSTransportPooledConn(t *testing.T) {
 
 	// Wait for the routines to finish
 	wg.Wait()
+	close(ch2)
+
+	err = <-ch1
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = <-ch2
+	if err != nil {
+		t.Fatal(err)
+	}
 }

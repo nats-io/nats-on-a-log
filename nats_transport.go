@@ -23,8 +23,6 @@ import (
 const (
 	natsConnectInbox = "raft.%s.accept"
 	natsRequestInbox = "raft.%s.request.%s"
-
-	defaultBufferSize = 32 * 1024
 )
 
 // natsAddr implements the net.Addr interface. An address for the NATS
