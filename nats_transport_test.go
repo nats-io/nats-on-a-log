@@ -18,6 +18,14 @@ import (
 	"github.com/nats-io/go-nats"
 )
 
+type testAddrProvider struct {
+	addr string
+}
+
+func (t *testAddrProvider) ServerAddr(id raft.ServerID) (raft.ServerAddress, error) {
+	return raft.ServerAddress(t.addr), nil
+}
+
 // This can be used as the destination for a logger and it'll
 // map them into calls to testing.T.Log, so that you only see
 // the logging for failed tests.
@@ -140,7 +148,7 @@ func TestNATSTransportHeartbeatFastPath(t *testing.T) {
 	defer trans2.Close()
 
 	var out raft.AppendEntriesResponse
-	if err := trans2.AppendEntries(trans1.LocalAddr(), &args, &out); err != nil {
+	if err := trans2.AppendEntries("id1", trans1.LocalAddr(), &args, &out); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -220,7 +228,7 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 	defer trans2.Close()
 
 	var out raft.AppendEntriesResponse
-	if err := trans2.AppendEntries(trans1.LocalAddr(), &args, &out); err != nil {
+	if err := trans2.AppendEntries("id1", trans1.LocalAddr(), &args, &out); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -300,7 +308,7 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 	}
 	defer trans2.Close()
 
-	pipeline, err := trans2.AppendEntriesPipeline(trans1.LocalAddr())
+	pipeline, err := trans2.AppendEntriesPipeline("id1", trans1.LocalAddr())
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -388,7 +396,7 @@ func TestNATSTransportRequestVote(t *testing.T) {
 	defer trans2.Close()
 
 	var out raft.RequestVoteResponse
-	if err := trans2.RequestVote(trans1.LocalAddr(), &args, &out); err != nil {
+	if err := trans2.RequestVote("id1", trans1.LocalAddr(), &args, &out); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -474,7 +482,7 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 	buf := bytes.NewBuffer([]byte("0123456789"))
 
 	var out raft.InstallSnapshotResponse
-	if err := trans2.InstallSnapshot(trans1.LocalAddr(), &args, &out, buf); err != nil {
+	if err := trans2.InstallSnapshot("id1", trans1.LocalAddr(), &args, &out, buf); err != nil {
 		t.Fatalf("err: %v", err)
 	}
 
@@ -503,11 +511,34 @@ func TestNATSTransportEncodeDecode(t *testing.T) {
 	defer trans1.Close()
 
 	local := trans1.LocalAddr()
-	enc := trans1.EncodePeer(local)
+	enc := trans1.EncodePeer("id1", local)
 	dec := trans1.DecodePeer(enc)
 
 	if dec != local {
 		t.Fatalf("enc/dec fail: %v %v", dec, local)
+	}
+}
+
+func TestNATSTransportEncodeDecodeAddressProvider(t *testing.T) {
+	s := RunDefaultServer()
+	defer s.Shutdown()
+	nc := NewDefaultConnection(t)
+	defer nc.Close()
+
+	addressOverride := "b"
+	config := &raft.NetworkTransportConfig{MaxPool: 2, Timeout: time.Second, Logger: newTestLogger(t), ServerAddressProvider: &testAddrProvider{addressOverride}}
+	trans1, err := NewNATSTransportWithConfig("a", nc, config)
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	defer trans1.Close()
+
+	local := trans1.LocalAddr()
+	enc := trans1.EncodePeer("id1", local)
+	dec := trans1.DecodePeer(enc)
+
+	if dec != raft.ServerAddress(addressOverride) {
+		t.Fatalf("enc/dec fail: %v %v", dec, addressOverride)
 	}
 }
 
@@ -584,7 +615,7 @@ func TestNATSTransportPooledConn(t *testing.T) {
 	appendFunc := func() {
 		defer wg.Done()
 		var out raft.AppendEntriesResponse
-		if err := trans2.AppendEntries(trans1.LocalAddr(), &args, &out); err != nil {
+		if err := trans2.AppendEntries("id1", trans1.LocalAddr(), &args, &out); err != nil {
 			ch2 <- fmt.Errorf("err: %v", err)
 			return
 		}
