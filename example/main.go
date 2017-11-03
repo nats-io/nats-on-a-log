@@ -83,7 +83,7 @@ func main() {
 		panic(err)
 	}
 
-	// Bootstrap is no node to join is provided and there is no existing state.
+	// Bootstrap if no node to join is provided and there is no existing state.
 	existingState, err := raft.HasExistingState(cacheStore, store, snapshots)
 	if err != nil {
 		panic(err)
