@@ -96,7 +96,7 @@ func TestNATSTransportStartStop(t *testing.T) {
 	nc := NewDefaultConnection(t)
 	defer nc.Close()
 
-	trans, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestNATSTransportHeartbeatFastPath(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestNATSTransportHeartbeatFastPath(t *testing.T) {
 	trans1.SetHeartbeatHandler(fastpath)
 
 	// Transport 2 makes outbound request
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 	}()
 
 	// Transport 2 makes outbound request
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -302,7 +302,7 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 	}()
 
 	// Transport 2 makes outbound request
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -346,7 +346,7 @@ func TestNATSTransportRequestVote(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -389,7 +389,7 @@ func TestNATSTransportRequestVote(t *testing.T) {
 	}()
 
 	// Transport 2 makes outbound request
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -472,7 +472,7 @@ func TestNATSTransportInstallSnapshot(t *testing.T) {
 	}()
 
 	// Transport 2 makes outbound request
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestNATSTransportEncodeDecode(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestNATSTransportEncodeDecodeAddressProvider(t *testing.T) {
 
 	addressOverride := "b"
 	config := &raft.NetworkTransportConfig{MaxPool: 2, Timeout: time.Second, Logger: newTestLogger(t), ServerAddressProvider: &testAddrProvider{addressOverride}}
-	trans1, err := NewNATSTransportWithConfig("a", nc, config)
+	trans1, err := NewNATSTransportWithConfig("a", "", nc, config)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestNATSTransportPooledConn(t *testing.T) {
 	defer nc.Close()
 
 	// Transport 1 is consumer
-	trans1, err := NewNATSTransportWithLogger("a", nc, time.Second, newTestLogger(t))
+	trans1, err := NewNATSTransportWithLogger("a", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestNATSTransportPooledConn(t *testing.T) {
 	}()
 
 	// Transport 2 makes outbound request, 3 conn pool
-	trans2, err := NewNATSTransportWithLogger("b", nc, time.Second, newTestLogger(t))
+	trans2, err := NewNATSTransportWithLogger("b", "", nc, time.Second, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

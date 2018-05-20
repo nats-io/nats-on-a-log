@@ -73,7 +73,7 @@ func main() {
 		panic(err)
 	}
 
-	trans, err := natslog.NewNATSTransport(*id, conn, 2*time.Second, os.Stdout)
+	trans, err := natslog.NewNATSTransport(*id, "", conn, 2*time.Second, os.Stdout)
 	if err != nil {
 		panic(err)
 	}

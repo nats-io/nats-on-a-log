@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	natsConnectInbox = "raft.%s.accept"
-	natsRequestInbox = "raft.%s.request.%s"
+	natsConnectInbox = "%s%s.accept"
+	natsRequestInbox = "%s%s.request.%s"
 )
 
 // natsAddr implements the net.Addr interface. An address for the NATS
@@ -174,24 +174,30 @@ func (n *natsConn) msgHandler(msg *nats.Msg) {
 
 // natsStreamLayer implements the raft.StreamLayer interface.
 type natsStreamLayer struct {
-	conn      *nats.Conn
-	localAddr natsAddr
-	sub       *nats.Subscription
-	logger    *log.Logger
-	conns     map[*natsConn]struct{}
-	mu        sync.Mutex
-	timeout   time.Duration
+	conn          *nats.Conn
+	localAddr     natsAddr
+	sub           *nats.Subscription
+	logger        *log.Logger
+	conns         map[*natsConn]struct{}
+	mu            sync.Mutex
+	timeout       time.Duration
+	subjectPrefix string
 }
 
-func newNATSStreamLayer(id string, conn *nats.Conn, logger *log.Logger, timeout time.Duration) (*natsStreamLayer, error) {
+func newNATSStreamLayer(
+	id, subjectPrefix string,
+	conn *nats.Conn,
+	logger *log.Logger,
+	timeout time.Duration) (*natsStreamLayer, error) {
 	n := &natsStreamLayer{
-		localAddr: natsAddr(id),
-		conn:      conn,
-		logger:    logger,
-		conns:     map[*natsConn]struct{}{},
-		timeout:   timeout,
+		localAddr:     natsAddr(id),
+		conn:          conn,
+		logger:        logger,
+		conns:         map[*natsConn]struct{}{},
+		timeout:       timeout,
+		subjectPrefix: subjectPrefix,
 	}
-	sub, err := conn.SubscribeSync(fmt.Sprintf(natsConnectInbox, id))
+	sub, err := conn.SubscribeSync(fmt.Sprintf(natsConnectInbox, subjectPrefix, id))
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +239,7 @@ func (n *natsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration
 
 	connect := &connectRequestProto{
 		ID:    n.localAddr.String(),
-		Inbox: fmt.Sprintf(natsRequestInbox, n.localAddr.String(), nats.NewInbox()),
+		Inbox: fmt.Sprintf(natsRequestInbox, n.subjectPrefix, n.localAddr.String(), nats.NewInbox()),
 	}
 	data, err := json.Marshal(connect)
 	if err != nil {
@@ -254,7 +260,7 @@ func (n *natsStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration
 	}
 
 	// Make connect request to peer.
-	msg, err := n.conn.Request(fmt.Sprintf(natsConnectInbox, address), data, timeout)
+	msg, err := n.conn.Request(fmt.Sprintf(natsConnectInbox, n.subjectPrefix, address), data, timeout)
 	if err != nil {
 		sub.Unsubscribe()
 		return nil, err
@@ -295,7 +301,7 @@ func (n *natsStreamLayer) Accept() (net.Conn, error) {
 		peerConn.outbox = connect.Inbox
 
 		// Setup inbox for peer.
-		inbox := fmt.Sprintf(natsRequestInbox, n.localAddr.String(), nats.NewInbox())
+		inbox := fmt.Sprintf(natsRequestInbox, n.subjectPrefix, n.localAddr.String(), nats.NewInbox())
 		sub, err := n.conn.Subscribe(inbox, peerConn.msgHandler)
 		if err != nil {
 			n.logger.Printf("[ERR] raft-nats: Failed to create inbox for remote peer: %v", err)
@@ -345,37 +351,52 @@ func (n *natsStreamLayer) Addr() net.Addr {
 
 // NewNATSTransport creates a new raft.NetworkTransport implemented with NATS
 // as the transport layer.
-func NewNATSTransport(id string, conn *nats.Conn, timeout time.Duration, logOutput io.Writer) (*raft.NetworkTransport, error) {
+func NewNATSTransport(
+	id, subjectPrefix string,
+	conn *nats.Conn,
+	timeout time.Duration,
+	logOutput io.Writer) (*raft.NetworkTransport, error) {
 	if logOutput == nil {
 		logOutput = os.Stderr
 	}
-	return NewNATSTransportWithLogger(id, conn, timeout, log.New(logOutput, "", log.LstdFlags))
+	return NewNATSTransportWithLogger(id, subjectPrefix, conn, timeout, log.New(logOutput, "", log.LstdFlags))
 }
 
 // NewNATSTransportWithLogger creates a new raft.NetworkTransport implemented
 // with NATS as the transport layer using the provided Logger.
-func NewNATSTransportWithLogger(id string, conn *nats.Conn, timeout time.Duration, logger *log.Logger) (*raft.NetworkTransport, error) {
-	return createNATSTransport(id, conn, logger, timeout, func(stream raft.StreamLayer) *raft.NetworkTransport {
+func NewNATSTransportWithLogger(
+	id, subjectPrefix string,
+	conn *nats.Conn,
+	timeout time.Duration,
+	logger *log.Logger) (*raft.NetworkTransport, error) {
+	return createNATSTransport(id, subjectPrefix, conn, logger, timeout, func(stream raft.StreamLayer) *raft.NetworkTransport {
 		return raft.NewNetworkTransportWithLogger(stream, 3, timeout, logger)
 	})
 }
 
 // NewNATSTransportWithConfig returns a raft.NetworkTransport implemented
 // with NATS as the transport layer, using the given config struct.
-func NewNATSTransportWithConfig(id string, conn *nats.Conn, config *raft.NetworkTransportConfig) (*raft.NetworkTransport, error) {
+func NewNATSTransportWithConfig(
+	id, subjectPrefix string,
+	conn *nats.Conn,
+	config *raft.NetworkTransportConfig) (*raft.NetworkTransport, error) {
 	if config.Timeout == 0 {
 		config.Timeout = 2 * time.Second
 	}
-	return createNATSTransport(id, conn, config.Logger, config.Timeout, func(stream raft.StreamLayer) *raft.NetworkTransport {
+	return createNATSTransport(id, subjectPrefix, conn, config.Logger, config.Timeout, func(stream raft.StreamLayer) *raft.NetworkTransport {
 		config.Stream = stream
 		return raft.NewNetworkTransportWithConfig(config)
 	})
 }
 
-func createNATSTransport(id string, conn *nats.Conn, logger *log.Logger, timeout time.Duration,
+func createNATSTransport(
+	id, subjectPrefix string,
+	conn *nats.Conn,
+	logger *log.Logger,
+	timeout time.Duration,
 	transportCreator func(stream raft.StreamLayer) *raft.NetworkTransport) (*raft.NetworkTransport, error) {
 
-	stream, err := newNATSStreamLayer(id, conn, logger, timeout)
+	stream, err := newNATSStreamLayer(id, subjectPrefix, conn, logger, timeout)
 	if err != nil {
 		return nil, err
 	}
