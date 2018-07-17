@@ -15,8 +15,8 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/hashicorp/raft-boltdb"
+	"github.com/liftbridge-io/nats-on-a-log"
 	"github.com/nats-io/go-nats"
-	"github.com/tylertreat/nats-on-a-log"
 )
 
 type joinRequest struct {
