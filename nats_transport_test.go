@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/hashicorp/raft"
-	"github.com/nats-io/gnatsd/server"
-	gnatsd "github.com/nats-io/gnatsd/test"
-	"github.com/nats-io/go-nats"
+	"github.com/nats-io/nats-server/v2/server"
+	gnatsd "github.com/nats-io/nats-server/v2/test"
+	"github.com/nats-io/nats.go"
 )
 
 type testAddrProvider struct {
