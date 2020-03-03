@@ -6,12 +6,12 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	"github.com/nats-io/nats-server/v2/server"
 	gnatsd "github.com/nats-io/nats-server/v2/test"
@@ -48,8 +48,11 @@ func (a *testLoggerAdapter) Write(d []byte) (int, error) {
 	return len(d), nil
 }
 
-func newTestLogger(t *testing.T) *log.Logger {
-	return log.New(&testLoggerAdapter{t: t}, "", log.Lmicroseconds)
+func newTestLogger(t *testing.T) hclog.Logger {
+	options := &hclog.LoggerOptions{
+		Output: &testLoggerAdapter{t: t},
+	}
+	return hclog.New(options)
 }
 
 // So that we can pass tests and benchmarks...
@@ -184,7 +187,7 @@ func TestNATSTransportAppendEntries(t *testing.T) {
 		PrevLogEntry: 100,
 		PrevLogTerm:  4,
 		Entries: []*raft.Log{
-			&raft.Log{
+			{
 				Index: 101,
 				Term:  4,
 				Type:  raft.LogNoop,
@@ -264,7 +267,7 @@ func TestNATSTransportAppendEntriesPipeline(t *testing.T) {
 		PrevLogEntry: 100,
 		PrevLogTerm:  4,
 		Entries: []*raft.Log{
-			&raft.Log{
+			{
 				Index: 101,
 				Term:  4,
 				Type:  raft.LogNoop,
@@ -563,7 +566,7 @@ func TestNATSTransportPooledConn(t *testing.T) {
 		PrevLogEntry: 100,
 		PrevLogTerm:  4,
 		Entries: []*raft.Log{
-			&raft.Log{
+			{
 				Index: 101,
 				Term:  4,
 				Type:  raft.LogNoop,

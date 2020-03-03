@@ -19,12 +19,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/raft"
 	"github.com/nats-io/nats.go"
 )
@@ -177,7 +177,7 @@ type natsStreamLayer struct {
 	conn          *nats.Conn
 	localAddr     natsAddr
 	sub           *nats.Subscription
-	logger        *log.Logger
+	logger        hclog.Logger
 	conns         map[*natsConn]struct{}
 	mu            sync.Mutex
 	timeout       time.Duration
@@ -187,7 +187,7 @@ type natsStreamLayer struct {
 func newNATSStreamLayer(
 	id, subjectPrefix string,
 	conn *nats.Conn,
-	logger *log.Logger,
+	logger hclog.Logger,
 	timeout time.Duration) (*natsStreamLayer, error) {
 	n := &natsStreamLayer{
 		localAddr:     natsAddr(id),
@@ -287,13 +287,13 @@ func (n *natsStreamLayer) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		if msg.Reply == "" {
-			n.logger.Println("[ERR] raft-nats: Invalid connect message (missing reply inbox)")
+			n.logger.Error("[ERR] raft-nats: Invalid connect message (missing reply inbox)")
 			continue
 		}
 
 		var connect connectRequestProto
 		if err := json.Unmarshal(msg.Data, &connect); err != nil {
-			n.logger.Println("[ERR] raft-nats: Invalid connect message (invalid data)")
+			n.logger.Error("[ERR] raft-nats: Invalid connect message (invalid data)")
 			continue
 		}
 
@@ -304,7 +304,7 @@ func (n *natsStreamLayer) Accept() (net.Conn, error) {
 		inbox := fmt.Sprintf(natsRequestInbox, n.subjectPrefix, n.localAddr.String(), nats.NewInbox())
 		sub, err := n.conn.Subscribe(inbox, peerConn.msgHandler)
 		if err != nil {
-			n.logger.Printf("[ERR] raft-nats: Failed to create inbox for remote peer: %v", err)
+			n.logger.Error("[ERR] raft-nats: Failed to create inbox for remote peer: %v", err)
 			continue
 		}
 		sub.SetPendingLimits(-1, -1)
@@ -315,12 +315,12 @@ func (n *natsStreamLayer) Accept() (net.Conn, error) {
 			panic(err)
 		}
 		if err := n.conn.Publish(msg.Reply, data); err != nil {
-			n.logger.Printf("[ERR] raft-nats: Failed to send connect response to remote peer: %v", err)
+			n.logger.Error("[ERR] raft-nats: Failed to send connect response to remote peer: %v", err)
 			sub.Unsubscribe()
 			continue
 		}
 		if err := n.conn.FlushTimeout(n.timeout); err != nil {
-			n.logger.Printf("[ERR] raft-nats: Failed to flush connect response to remote peer: %v", err)
+			n.logger.Error("[ERR] raft-nats: Failed to flush connect response to remote peer: %v", err)
 			sub.Unsubscribe()
 			continue
 		}
@@ -359,7 +359,12 @@ func NewNATSTransport(
 	if logOutput == nil {
 		logOutput = os.Stderr
 	}
-	return NewNATSTransportWithLogger(id, subjectPrefix, conn, timeout, log.New(logOutput, "", log.LstdFlags))
+	options := &hclog.LoggerOptions{
+		Name:   "raft-nats",
+		Level:  hclog.Warn,
+		Output: logOutput,
+	}
+	return NewNATSTransportWithLogger(id, subjectPrefix, conn, timeout, hclog.New(options))
 }
 
 // NewNATSTransportWithLogger creates a new raft.NetworkTransport implemented
@@ -368,7 +373,7 @@ func NewNATSTransportWithLogger(
 	id, subjectPrefix string,
 	conn *nats.Conn,
 	timeout time.Duration,
-	logger *log.Logger) (*raft.NetworkTransport, error) {
+	logger hclog.Logger) (*raft.NetworkTransport, error) {
 	return createNATSTransport(id, subjectPrefix, conn, logger, timeout, func(stream raft.StreamLayer) *raft.NetworkTransport {
 		return raft.NewNetworkTransportWithLogger(stream, 3, timeout, logger)
 	})
@@ -392,7 +397,7 @@ func NewNATSTransportWithConfig(
 func createNATSTransport(
 	id, subjectPrefix string,
 	conn *nats.Conn,
-	logger *log.Logger,
+	logger hclog.Logger,
 	timeout time.Duration,
 	transportCreator func(stream raft.StreamLayer) *raft.NetworkTransport) (*raft.NetworkTransport, error) {
 
